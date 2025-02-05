@@ -4,9 +4,12 @@ go 1.23.5
 
 require fyne.io/fyne/v2 v2.5.4
 
+require github.com/dlclark/regexp2 v1.11.4 // indirect
+
 require (
 	fyne.io/systray v1.11.0 // indirect
 	github.com/BurntSushi/toml v1.4.0 // indirect
+	github.com/alecthomas/chroma/v2 v2.15.0
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fredbi/uri v1.1.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
