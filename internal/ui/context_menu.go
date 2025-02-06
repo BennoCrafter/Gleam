@@ -14,7 +14,7 @@ func (app *GleamApp) MouseDown(event *desktop.MouseEvent) {
 }
 
 func (app *GleamApp) showPopupMenu(pos fyne.Position) {
-	if app.popup == nil {
+	if app.ui.popup == nil {
 		menu := fyne.NewMenu("Opts",
 			fyne.NewMenuItem("Discard changes", func() {
 			}),
@@ -29,12 +29,12 @@ func (app *GleamApp) showPopupMenu(pos fyne.Position) {
 		// 	}),
 		// )
 		popupMenu := widget.NewPopUpMenu(menu,
-			fyne.CurrentApp().Driver().CanvasForObject(app.window.Canvas().Content()),
+			fyne.CurrentApp().Driver().CanvasForObject(app.ui.window.Canvas().Content()),
 		)
 
 		popupMenu.ShowAtPosition(pos)
-		app.popup = popupMenu
+		app.ui.popup = popupMenu
 		return
 	}
-	app.popup.ShowAtPosition(pos)
+	app.ui.popup.ShowAtPosition(pos)
 }

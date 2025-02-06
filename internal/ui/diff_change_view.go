@@ -6,8 +6,6 @@ import (
 	"os"
 	"strings"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
@@ -53,7 +51,7 @@ func highlightDiff(content string) *widget.TextGrid {
 		}
 	}
 
-	grid.Refresh()
+	//grid.Refresh()
 	return grid
 }
 
@@ -144,12 +142,4 @@ func loadDiffContent(filePath string) (string, error) {
 		return "", fmt.Errorf("failed to read diff file: %w", err)
 	}
 	return string(data), nil
-}
-
-func (app *GleamApp) makeDiffViewer() fyne.CanvasObject {
-	println("cha  " + app.activeFileDiff)
-	diffDisplay := highlightDiff(app.activeDiff)
-	app.diffViewer = diffDisplay
-	app.diffViewer.Refresh()
-	return container.NewScroll(diffDisplay)
 }
