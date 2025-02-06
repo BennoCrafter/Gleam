@@ -119,7 +119,6 @@ func NewGleamApp() *GleamApp {
 
 	return gleamApp
 }
-
 func (app *GleamApp) handleCommit() {
 	defer app.logTiming("Commit handling")()
 
@@ -137,14 +136,29 @@ func (app *GleamApp) handleCommit() {
 				filesToCommit = append(filesToCommit, file)
 			}
 		}
-		app.git.Add(filesToCommit)
-		if err := app.git.Commit(message); err != nil {
-			log.Printf("Error committing: %v", err)
-			return
-		}
 
-		go app.refreshDiffView()
-		go app.refreshFileList()
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			app.git.Add(filesToCommit)
+			if err := app.git.Commit(message); err != nil {
+				log.Printf("Error committing: %v", err)
+				return
+			}
+		}()
+		wg.Wait()
+
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			app.refreshDiffView()
+		}()
+		go func() {
+			defer wg.Done()
+			app.refreshFileList()
+		}()
+		wg.Wait()
 	}
 }
 
