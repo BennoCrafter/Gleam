@@ -51,7 +51,7 @@ func NewGleamApp() *GleamApp {
 	window := application.NewWindow("Gleam")
 	application.SetIcon(theme.FileIcon())
 
-	workingDir, err := filepath.Abs("/Users/benno/coding/Timetable")
+	workingDir, err := filepath.Abs("/Users/benno/coding/gleam")
 	if err != nil {
 		log.Fatalf("Error getting absolute path: %v", err)
 	}
