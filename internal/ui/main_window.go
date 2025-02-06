@@ -11,6 +11,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -184,8 +185,14 @@ func (app *GleamApp) createFileList() fyne.CanvasObject {
 				app.ignoredFiles = append(app.ignoredFiles, currentFile)
 			}
 		}
+		//
 
-		fileItem.onClick = func() {
+		fileItem.onClick = func(e *desktop.MouseEvent) {
+			if e.Button == desktop.MouseButtonSecondary {
+				app.showPopupMenu(e.AbsolutePosition)
+				return
+
+			}
 			fmt.Printf("Selected file: %s\n", currentFile)
 			app.activeFileDiff = currentFile
 			go app.refreshDiffView()

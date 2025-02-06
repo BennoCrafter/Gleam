@@ -12,10 +12,10 @@ type FileListItem struct {
 	check     *widget.Check
 	label     *widget.Label
 	container *fyne.Container
-	onClick   func()
+	onClick   func(*desktop.MouseEvent)
 }
 
-func NewFileListItem(filename string, isChecked bool, onCheck func(bool), onClick func()) *FileListItem {
+func NewFileListItem(filename string, isChecked bool, onCheck func(bool), onClick func(*desktop.MouseEvent)) *FileListItem {
 	item := &FileListItem{
 		check:   widget.NewCheck("", onCheck),
 		label:   widget.NewLabel(filename),
@@ -41,7 +41,7 @@ func (f *FileListItem) MouseDown(event *desktop.MouseEvent) {
 	if event.Button == desktop.MouseButtonSecondary {
 		println("OMG")
 	}
-	f.onClick()
+	f.onClick(event)
 }
 
 func (f *FileListItem) MouseUp(*desktop.MouseEvent) {}
