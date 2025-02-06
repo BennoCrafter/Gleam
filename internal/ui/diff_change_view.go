@@ -15,6 +15,10 @@ import (
 )
 
 func highlightDiff(content string) *widget.TextGrid {
+	if content == "" {
+		return widget.NewTextGrid()
+	}
+
 	grid := widget.NewTextGridFromString(content)
 	grid.ShowLineNumbers = true
 	style := styles.Get("monokai")
@@ -49,10 +53,11 @@ func highlightDiff(content string) *widget.TextGrid {
 		}
 	}
 
+	grid.Refresh()
 	return grid
 }
 
-func setLineStyle(grid *widget.TextGrid, row int, line string, bg, fg color.Color) {
+func setLineStyle(grid *widget.TextGrid, row int, _ string, bg, fg color.Color) {
 	grid.SetRowStyle(row, &widget.CustomTextGridStyle{
 		BGColor: bg,
 		FGColor: fg,
@@ -141,22 +146,10 @@ func loadDiffContent(filePath string) (string, error) {
 	return string(data), nil
 }
 
-func makeDiffViewer(filePath string) fyne.CanvasObject {
-	content, err := loadDiffContent(filePath)
-	if err != nil {
-		content = `diff --git a/example.go b/example.go
-index 1234567..89abcdef 100644
---- a/example.go
-+++ b/example.go
-@@ -1,5 +1,5 @@
-package main
-
-func main() {
--    fmt.Println("Hello Wold")
-+    fmt.Println("Hello World")
-}`
-	}
-
-	diffDisplay := highlightDiff(content)
+func (app *GleamApp) makeDiffViewer() fyne.CanvasObject {
+	println("cha  " + app.activeFileDiff)
+	diffDisplay := highlightDiff(app.activeDiff)
+	app.diffViewer = diffDisplay
+	app.diffViewer.Refresh()
 	return container.NewScroll(diffDisplay)
 }

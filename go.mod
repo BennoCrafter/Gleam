@@ -4,10 +4,7 @@ go 1.23.5
 
 require fyne.io/fyne/v2 v2.5.4
 
-require (
-	fyne.io/fyne v1.4.3 // indirect
-	github.com/dlclark/regexp2 v1.11.4 // indirect
-)
+require github.com/dlclark/regexp2 v1.11.4 // indirect
 
 require (
 	fyne.io/systray v1.11.0 // indirect

@@ -31,6 +31,10 @@ func (g *GitCommand) GetDiff() (string, error) {
 	return g.runCommand("diff")
 }
 
+func (g *GitCommand) GetFileDiff(file string) (string, error) {
+	return g.runCommand("diff", file)
+}
+
 func (g *GitCommand) GetStagedFiles() ([]string, error) {
 	output, err := g.runCommand("ls-files", "--staged", "--modified", "--exclude-standard")
 	if err != nil {
@@ -82,4 +86,5 @@ func (g *GitCommand) StageFile(file string) error {
 
 func (g *GitCommand) UnstageFile(file string) error {
 	return g.Unstage([]string{file})
+
 }

@@ -23,17 +23,21 @@ type Commit struct {
 }
 
 type GleamApp struct {
-	description   *widget.Entry
-	summary       *widget.Entry
-	commit        Commit
-	window        fyne.Window
-	git           *git.GitCommand
-	diffViewer    fyne.CanvasObject
-	fileList      *widget.List
-	stagedFiles   []string
-	unstagedFiles []string
-	ignoredFiles  []string
-	mutex         sync.RWMutex
+	description    *widget.Entry
+	summary        *widget.Entry
+	commit         Commit
+	window         fyne.Window
+	git            *git.GitCommand
+	diffViewer     *widget.TextGrid
+	fileList       *widget.List
+	stagedFiles    []string
+	unstagedFiles  []string
+	ignoredFiles   []string
+	mutex          sync.RWMutex
+	activeFileDiff string
+	activeDiff     string
+	diffContainer  *fyne.Container
+	popup          *widget.PopUpMenu
 }
 
 func NewGleamApp() *GleamApp {
@@ -51,7 +55,7 @@ func NewGleamApp() *GleamApp {
 	window := application.NewWindow("Gleam")
 	application.SetIcon(theme.FileIcon())
 
-	workingDir, err := filepath.Abs("/Users/benno/coding/gleam")
+	workingDir, err := filepath.Abs(".")
 	if err != nil {
 		log.Fatalf("Error getting absolute path: %v", err)
 	}
@@ -80,7 +84,6 @@ func (app *GleamApp) handleCommit() {
 			fmt.Printf("Error committing: %v\n", err)
 			return
 		}
-
 		go app.refreshDiffView()
 		go app.refreshFileList()
 	}
@@ -92,14 +95,17 @@ func (app *GleamApp) refreshDiffView() {
 	start := time.Now()
 	fmt.Println("Refreshing diff view...")
 
-	diff, err := app.git.GetDiff()
+	var err error
+	app.activeDiff, err = app.git.GetFileDiff(app.activeFileDiff)
+
 	if err != nil {
 		fmt.Printf("Error getting diff: %v\n", err)
 		return
 	}
-
-	app.diffViewer = highlightDiff(diff)
-	app.window.Content().Refresh()
+	diffDisplay := highlightDiff(app.activeDiff)
+	app.diffViewer = diffDisplay
+	app.diffContainer.Objects[0] = container.NewScroll(app.diffViewer)
+	app.diffViewer.Refresh()
 
 	fmt.Printf("Diff refresh took %v\n", time.Since(start))
 }
@@ -128,7 +134,9 @@ func (app *GleamApp) refreshFileList() {
 
 	go app.updateFileCache()
 
-	app.fileList.Refresh()
+	if app.fileList != nil {
+		app.fileList.Refresh()
+	}
 
 	fmt.Printf("File list refresh took %v\n", time.Since(start))
 }
@@ -140,13 +148,13 @@ func (app *GleamApp) createFileList() fyne.CanvasObject {
 	go app.updateFileCache()
 
 	getFileCount := func() int {
+		app.mutex.RLock()
+		defer app.mutex.RUnlock()
 		return len(app.stagedFiles) + len(app.unstagedFiles)
 	}
 
 	createListItem := func() fyne.CanvasObject {
-		check := widget.NewCheck("", nil)
-		label := widget.NewLabel("")
-		return container.NewHBox(check, label)
+		return NewFileListItem("", false, nil, nil)
 	}
 
 	updateListItem := func(id widget.ListItemID, item fyne.CanvasObject) {
@@ -154,32 +162,33 @@ func (app *GleamApp) createFileList() fyne.CanvasObject {
 		defer app.mutex.RUnlock()
 
 		allFiles := append(app.stagedFiles, app.unstagedFiles...)
-		if len(allFiles) == 0 {
+		if len(allFiles) == 0 || int(id) >= len(allFiles) {
 			return
 		}
 
 		currentFile := allFiles[id]
-		box := item.(*fyne.Container)
-		check := box.Objects[0].(*widget.Check)
-		label := box.Objects[1].(*widget.Label)
+		fileItem := item.(*FileListItem)
 
 		isIgnored := slices.Contains(app.ignoredFiles, currentFile)
 
-		check.SetChecked(!isIgnored)
-		label.SetText(currentFile)
+		fileItem.check.SetChecked(!isIgnored)
+		fileItem.label.SetText(currentFile)
 
-		// Handle check state changes
-		check.OnChanged = func(checked bool) {
+		fileItem.check.OnChanged = func(checked bool) {
 			app.mutex.Lock()
 			defer app.mutex.Unlock()
 
 			if checked {
-				// Remove from ignored files
 				app.ignoredFiles = removeFromSlice(app.ignoredFiles, currentFile)
 			} else {
-				// Add to ignored files
 				app.ignoredFiles = append(app.ignoredFiles, currentFile)
 			}
+		}
+
+		fileItem.onClick = func() {
+			fmt.Printf("Selected file: %s\n", currentFile)
+			app.activeFileDiff = currentFile
+			go app.refreshDiffView()
 		}
 	}
 
@@ -197,7 +206,6 @@ func (app *GleamApp) createFileList() fyne.CanvasObject {
 	)
 }
 
-// Helper function to remove an element from a slice
 func removeFromSlice(slice []string, item string) []string {
 	for i, v := range slice {
 		if v == item {
@@ -248,7 +256,7 @@ func logLifecycle(fyneApp fyne.App, app *GleamApp) {
 	fyneApp.Lifecycle().SetOnEnteredForeground(func() {
 		log.Println("Lifecycle: Entered Foreground")
 		app.refreshFileList()
-		app.refreshDiffView()
+		go app.refreshDiffView()
 	})
 	fyneApp.Lifecycle().SetOnExitedForeground(func() {
 		log.Println("Lifecycle: Exited Foreground")
@@ -268,10 +276,11 @@ func (app *GleamApp) Run() {
 		app.createFileList(),
 	)
 
-	diff, _ := app.git.GetDiff()
-	app.diffViewer = makeDiffViewer(diff)
+	diffViewer := highlightDiff(app.activeDiff)
+	app.diffViewer = diffViewer
+	app.diffContainer = container.NewStack(container.NewScroll(diffViewer))
 
-	layout := container.NewHSplit(commitField, app.diffViewer)
+	layout := container.NewHSplit(commitField, app.diffContainer)
 	layout.Offset = 0.35
 
 	app.window.SetContent(layout)
