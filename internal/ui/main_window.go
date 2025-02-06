@@ -123,6 +123,9 @@ func (app *GleamApp) refreshFileList() {
 func (app *GleamApp) createFileList() fyne.CanvasObject {
 	start := time.Now()
 	fmt.Println("Creating file list...")
+	if app.fileList != nil {
+		return app.fileList
+	}
 
 	go app.updateFileCache()
 
