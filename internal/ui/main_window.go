@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
@@ -91,27 +92,45 @@ func NewGleamApp() *GleamApp {
 	gleamApp.ui.window = window
 
 	fetchButton := widget.NewButton("Fetch", func() {
-		err := gleamApp.git.Fetch()
-		if err != nil {
-			log.Printf("Error fetching: %v", err)
-		}
+		progress := dialog.NewProgress("Fetching", "Fetching changes from remote...", window)
+		progress.Show()
+		go func() {
+			err := gleamApp.git.Fetch()
+			progress.Hide()
+			if err != nil {
+				dialog.ShowError(err, window)
+			}
+		}()
 	})
 	fetchButton.Icon = theme.DownloadIcon()
 
 	pullButton := widget.NewButton("Pull", func() {
-		err := gleamApp.git.Pull()
-		if err != nil {
-			log.Printf("Error pulling: %v", err)
-		}
-		gleamApp.refreshFileList()
+		progress := dialog.NewProgress("Pulling", "Pulling changes from remote...", window)
+		progress.Show()
+		go func() {
+			err := gleamApp.git.Pull()
+			progress.Hide()
+			if err != nil {
+				dialog.ShowError(err, window)
+			} else {
+				gleamApp.refreshFileList()
+			}
+		}()
 	})
 	pullButton.Icon = theme.MoveDownIcon()
 
 	pushButton := widget.NewButton("Push", func() {
-		err := gleamApp.git.Push()
-		if err != nil {
-			log.Printf("Error pushing: %v", err)
-		}
+		progress := dialog.NewProgress("Pushing", "Pushing changes to remote...", window)
+		progress.Show()
+		go func() {
+			err := gleamApp.git.Push()
+			progress.Hide()
+			if err != nil {
+				dialog.ShowError(err, window)
+			} else {
+				dialog.ShowInformation("Success", "Changes pushed successfully", window)
+			}
+		}()
 	})
 	pushButton.Icon = theme.UploadIcon()
 	toolbar := container.New(layout.NewHBoxLayout(), layout.NewSpacer(), layout.NewSpacer(), layout.NewSpacer(), fetchButton, pullButton, pushButton)
@@ -137,15 +156,21 @@ func (app *GleamApp) handleCommit() {
 			}
 		}
 
+		progress := dialog.NewProgress("Committing", "Committing changes...", app.ui.window)
+		progress.Show()
+
 		var wg sync.WaitGroup
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			app.git.Add(filesToCommit)
 			if err := app.git.Commit(message); err != nil {
-				log.Printf("Error committing: %v", err)
+				progress.Hide()
+				dialog.ShowError(err, app.ui.window)
 				return
 			}
+			progress.Hide()
+			dialog.ShowInformation("Success", "Changes committed successfully", app.ui.window)
 		}()
 		wg.Wait()
 
@@ -159,6 +184,9 @@ func (app *GleamApp) handleCommit() {
 			app.refreshFileList()
 		}()
 		wg.Wait()
+
+		app.ui.summary.SetText("")
+		app.ui.description.SetText("")
 	}
 }
 
