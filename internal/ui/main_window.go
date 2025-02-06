@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -50,7 +51,10 @@ func NewGleamApp() *GleamApp {
 	window := application.NewWindow("Gleam")
 	application.SetIcon(theme.FileIcon())
 
-	workingDir, _ := filepath.Abs("/Users/benno/coding/gleam")
+	workingDir, err := filepath.Abs("/Users/benno/coding/Timetable")
+	if err != nil {
+		log.Fatalf("Error getting absolute path: %v", err)
+	}
 	gitCmd := git.NewGitCommand(workingDir)
 
 	gleamApp.window = window
@@ -103,8 +107,19 @@ func (app *GleamApp) refreshDiffView() {
 func (app *GleamApp) updateFileCache() {
 	app.mutex.Lock()
 	defer app.mutex.Unlock()
-	app.stagedFiles, _ = app.git.GetStagedFiles()
-	app.unstagedFiles, _ = app.git.GetUnstagedFiles()
+	var err error
+	app.stagedFiles, err = app.git.GetStagedFiles()
+	if err != nil {
+		log.Printf("Error getting staged files: %v", err)
+	}
+	app.unstagedFiles, err = app.git.GetUnstagedFiles()
+	if err != nil {
+		log.Printf("Error getting unstaged files: %v", err)
+	}
+	nStaged := len(app.stagedFiles)
+	nUnstaged := len(app.unstagedFiles)
+	fmt.Printf("Staged files (%d): %v\n", nStaged, app.stagedFiles)
+	fmt.Printf("Unstaged files (%d): %v\n", nUnstaged, app.unstagedFiles)
 }
 
 func (app *GleamApp) refreshFileList() {
@@ -113,9 +128,7 @@ func (app *GleamApp) refreshFileList() {
 
 	go app.updateFileCache()
 
-	if app.fileList != nil {
-		app.fileList.Refresh()
-	}
+	app.fileList.Refresh()
 
 	fmt.Printf("File list refresh took %v\n", time.Since(start))
 }
@@ -123,53 +136,54 @@ func (app *GleamApp) refreshFileList() {
 func (app *GleamApp) createFileList() fyne.CanvasObject {
 	start := time.Now()
 	fmt.Println("Creating file list...")
-	if app.fileList != nil {
-		return app.fileList
-	}
 
 	go app.updateFileCache()
 
-	fileList := widget.NewList(
-		func() int {
-			allFiles := append(app.stagedFiles, app.unstagedFiles...)
-			return len(allFiles)
-		},
-		func() fyne.CanvasObject {
-			check := widget.NewCheck("", nil)
-			label := widget.NewLabel("")
-			return container.NewHBox(check, label)
-		},
-		func(id widget.ListItemID, item fyne.CanvasObject) {
-			allFiles := append(app.stagedFiles, app.unstagedFiles...)
-			currentFile := allFiles[id]
+	getFileCount := func() int {
+		return len(app.stagedFiles) + len(app.unstagedFiles)
+	}
 
-			box := item.(*fyne.Container)
-			check := box.Objects[0].(*widget.Check)
-			label := box.Objects[1].(*widget.Label)
-			isIgnored := false
-			for _, f := range app.ignoredFiles {
-				if f == currentFile {
-					isIgnored = true
-					break
-				}
-			}
-			check.SetChecked(!isIgnored)
-			label.SetText(currentFile)
-			check.OnChanged = func(checked bool) {
-				if !checked {
-					app.ignoredFiles = append(app.ignoredFiles, currentFile)
-				} else {
-					for i, f := range app.ignoredFiles {
-						if f == currentFile {
-							app.ignoredFiles = append(app.ignoredFiles[:i], app.ignoredFiles[i+1:]...)
-							break
-						}
-					}
-				}
-			}
-		},
-	)
+	createListItem := func() fyne.CanvasObject {
+		check := widget.NewCheck("", nil)
+		label := widget.NewLabel("")
+		return container.NewHBox(check, label)
+	}
 
+	updateListItem := func(id widget.ListItemID, item fyne.CanvasObject) {
+		app.mutex.RLock()
+		defer app.mutex.RUnlock()
+
+		allFiles := append(app.stagedFiles, app.unstagedFiles...)
+		if len(allFiles) == 0 {
+			return
+		}
+
+		currentFile := allFiles[id]
+		box := item.(*fyne.Container)
+		check := box.Objects[0].(*widget.Check)
+		label := box.Objects[1].(*widget.Label)
+
+		isIgnored := slices.Contains(app.ignoredFiles, currentFile)
+
+		check.SetChecked(!isIgnored)
+		label.SetText(currentFile)
+
+		// Handle check state changes
+		check.OnChanged = func(checked bool) {
+			app.mutex.Lock()
+			defer app.mutex.Unlock()
+
+			if checked {
+				// Remove from ignored files
+				app.ignoredFiles = removeFromSlice(app.ignoredFiles, currentFile)
+			} else {
+				// Add to ignored files
+				app.ignoredFiles = append(app.ignoredFiles, currentFile)
+			}
+		}
+	}
+
+	fileList := widget.NewList(getFileCount, createListItem, updateListItem)
 	app.fileList = fileList
 
 	scroll := container.NewVScroll(fileList)
@@ -181,6 +195,16 @@ func (app *GleamApp) createFileList() fyne.CanvasObject {
 		widget.NewLabel("Changes"),
 		scroll,
 	)
+}
+
+// Helper function to remove an element from a slice
+func removeFromSlice(slice []string, item string) []string {
+	for i, v := range slice {
+		if v == item {
+			return append(slice[:i], slice[i+1:]...)
+		}
+	}
+	return slice
 }
 
 func (app *GleamApp) createCommitUI() (*widget.Entry, *widget.Entry, *widget.Button) {

@@ -36,7 +36,13 @@ func (g *GitCommand) GetStagedFiles() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return strings.Split(strings.TrimSpace(output), "\n"), nil
+
+	files := strings.Split(strings.TrimSpace(output), "\n")
+	if len(files) == 1 && files[0] == "" {
+		return []string{}, nil
+	}
+
+	return files, nil
 }
 
 func (g *GitCommand) GetUnstagedFiles() ([]string, error) {
@@ -44,7 +50,13 @@ func (g *GitCommand) GetUnstagedFiles() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return strings.Split(strings.TrimSpace(output), "\n"), nil
+
+	files := strings.Split(strings.TrimSpace(output), "\n")
+	if len(files) == 1 && files[0] == "" {
+		return []string{}, nil
+	}
+
+	return files, nil
 }
 
 func (g *GitCommand) Commit(message string) error {
