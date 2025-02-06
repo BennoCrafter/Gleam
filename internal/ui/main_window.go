@@ -1,7 +1,11 @@
 package ui
 
 import (
+	"fmt"
+	"log"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -18,31 +22,49 @@ type Commit struct {
 }
 
 type GleamApp struct {
-	description *widget.Entry
-	summary     *widget.Entry
-	commit      Commit
-	window      fyne.Window
-	git         *git.GitCommand
-	diffViewer  fyne.CanvasObject
-	fileList    *widget.List
+	description   *widget.Entry
+	summary       *widget.Entry
+	commit        Commit
+	window        fyne.Window
+	git           *git.GitCommand
+	diffViewer    fyne.CanvasObject
+	fileList      *widget.List
+	stagedFiles   []string
+	unstagedFiles []string
+	ignoredFiles  []string
+	mutex         sync.RWMutex
 }
 
 func NewGleamApp() *GleamApp {
+	fmt.Println("Creating new Gleam app...")
+	start := time.Now()
+
 	application := app.NewWithID("com.bennowo.gleam")
+	gleamApp := &GleamApp{
+		commit:        Commit{},
+		stagedFiles:   make([]string, 0),
+		unstagedFiles: make([]string, 0),
+		ignoredFiles:  make([]string, 0),
+	}
+	logLifecycle(application, gleamApp)
 	window := application.NewWindow("Gleam")
 	application.SetIcon(theme.FileIcon())
 
 	workingDir, _ := filepath.Abs("/Users/benno/coding/gleam")
 	gitCmd := git.NewGitCommand(workingDir)
 
-	return &GleamApp{
-		commit: Commit{},
-		window: window,
-		git:    gitCmd,
-	}
+	gleamApp.window = window
+	gleamApp.git = gitCmd
+
+	fmt.Printf("App creation took %v\n", time.Since(start))
+
+	return gleamApp
 }
 
 func (app *GleamApp) handleCommit() {
+	start := time.Now()
+	fmt.Println("Handling commit...")
+
 	if app.summary.Text != "" {
 		message := app.summary.Text
 		if app.description.Text != "" {
@@ -51,37 +73,63 @@ func (app *GleamApp) handleCommit() {
 
 		err := app.git.Commit(message)
 		if err != nil {
-			// Ideally, display an error dialog or log the error.
+			fmt.Printf("Error committing: %v\n", err)
 			return
 		}
 
-		app.refreshDiffView()
-		app.refreshFileList()
+		go app.refreshDiffView()
+		go app.refreshFileList()
 	}
+
+	fmt.Printf("Commit handling took %v\n", time.Since(start))
 }
 
 func (app *GleamApp) refreshDiffView() {
+	start := time.Now()
+	fmt.Println("Refreshing diff view...")
+
 	diff, err := app.git.GetDiff()
 	if err != nil {
+		fmt.Printf("Error getting diff: %v\n", err)
 		return
 	}
 
 	app.diffViewer = highlightDiff(diff)
 	app.window.Content().Refresh()
+
+	fmt.Printf("Diff refresh took %v\n", time.Since(start))
+}
+
+func (app *GleamApp) updateFileCache() {
+	app.mutex.Lock()
+	defer app.mutex.Unlock()
+	app.stagedFiles, _ = app.git.GetStagedFiles()
+	app.unstagedFiles, _ = app.git.GetUnstagedFiles()
 }
 
 func (app *GleamApp) refreshFileList() {
+	start := time.Now()
+	fmt.Println("Refreshing file list...")
+
+	go app.updateFileCache()
+
 	if app.fileList != nil {
 		app.fileList.Refresh()
 	}
+
+	fmt.Printf("File list refresh took %v\n", time.Since(start))
 }
 
 func (app *GleamApp) createFileList() fyne.CanvasObject {
+	start := time.Now()
+	fmt.Println("Creating file list...")
+
+	go app.updateFileCache()
+
 	fileList := widget.NewList(
 		func() int {
-			unstagedFiles, _ := app.git.GetUnstagedFiles()
-			stagedFiles, _ := app.git.GetStagedFiles()
-			return len(stagedFiles) + len(unstagedFiles)
+			allFiles := append(app.stagedFiles, app.unstagedFiles...)
+			return len(allFiles)
 		},
 		func() fyne.CanvasObject {
 			check := widget.NewCheck("", nil)
@@ -89,30 +137,30 @@ func (app *GleamApp) createFileList() fyne.CanvasObject {
 			return container.NewHBox(check, label)
 		},
 		func(id widget.ListItemID, item fyne.CanvasObject) {
-			unstagedFiles, _ := app.git.GetUnstagedFiles()
-			stagedFiles, _ := app.git.GetStagedFiles()
+			allFiles := append(app.stagedFiles, app.unstagedFiles...)
+			currentFile := allFiles[id]
 
 			box := item.(*fyne.Container)
 			check := box.Objects[0].(*widget.Check)
 			label := box.Objects[1].(*widget.Label)
-
-			if id < widget.ListItemID(len(stagedFiles)) {
-				label.SetText(stagedFiles[id])
-				check.SetChecked(true)
-				check.OnChanged = func(checked bool) {
-					if !checked {
-						app.git.UnstageFile(stagedFiles[id])
-						app.refreshFileList()
-					}
+			isIgnored := false
+			for _, f := range app.ignoredFiles {
+				if f == currentFile {
+					isIgnored = true
+					break
 				}
-			} else {
-				index := id - widget.ListItemID(len(stagedFiles))
-				label.SetText(unstagedFiles[index])
-				check.SetChecked(false)
-				check.OnChanged = func(checked bool) {
-					if checked {
-						app.git.StageFile(unstagedFiles[index])
-						app.refreshFileList()
+			}
+			check.SetChecked(!isIgnored)
+			label.SetText(currentFile)
+			check.OnChanged = func(checked bool) {
+				if !checked {
+					app.ignoredFiles = append(app.ignoredFiles, currentFile)
+				} else {
+					for i, f := range app.ignoredFiles {
+						if f == currentFile {
+							app.ignoredFiles = append(app.ignoredFiles[:i], app.ignoredFiles[i+1:]...)
+							break
+						}
 					}
 				}
 			}
@@ -122,7 +170,9 @@ func (app *GleamApp) createFileList() fyne.CanvasObject {
 	app.fileList = fileList
 
 	scroll := container.NewVScroll(fileList)
-	scroll.SetMinSize(fyne.NewSize(200, 300))
+	scroll.SetMinSize(fyne.NewSize(200, 600))
+
+	fmt.Printf("File list creation took %v\n", time.Since(start))
 
 	return container.NewVBox(
 		widget.NewLabel("Changes"),
@@ -131,6 +181,9 @@ func (app *GleamApp) createFileList() fyne.CanvasObject {
 }
 
 func (app *GleamApp) createCommitUI() (*widget.Entry, *widget.Entry, *widget.Button) {
+	start := time.Now()
+	fmt.Println("Creating commit UI...")
+
 	summaryEntry := widget.NewEntry()
 	summaryEntry.SetPlaceHolder("Summary (required)")
 
@@ -140,7 +193,7 @@ func (app *GleamApp) createCommitUI() (*widget.Entry, *widget.Entry, *widget.But
 	commitButton := widget.NewButton("Commit", app.handleCommit)
 	commitButton.Importance = widget.HighImportance
 	commitButton.Icon = theme.ConfirmIcon()
-	commitButton.Disable() // Initially disabled until summary is non-empty
+	commitButton.Disable()
 
 	summaryEntry.OnChanged = func(text string) {
 		if text == "" {
@@ -153,10 +206,32 @@ func (app *GleamApp) createCommitUI() (*widget.Entry, *widget.Entry, *widget.But
 	app.summary = summaryEntry
 	app.description = descriptionEntry
 
+	fmt.Printf("Commit UI creation took %v\n", time.Since(start))
+
 	return summaryEntry, descriptionEntry, commitButton
 }
 
+func logLifecycle(fyneApp fyne.App, app *GleamApp) {
+	fyneApp.Lifecycle().SetOnStarted(func() {
+		log.Println("Lifecycle: Started")
+	})
+	fyneApp.Lifecycle().SetOnStopped(func() {
+		log.Println("Lifecycle: Stopped")
+	})
+	fyneApp.Lifecycle().SetOnEnteredForeground(func() {
+		log.Println("Lifecycle: Entered Foreground")
+		app.refreshFileList()
+		app.refreshDiffView()
+	})
+	fyneApp.Lifecycle().SetOnExitedForeground(func() {
+		log.Println("Lifecycle: Exited Foreground")
+	})
+}
+
 func (app *GleamApp) Run() {
+	start := time.Now()
+	fmt.Println("Starting Gleam app...")
+
 	summaryEntry, descriptionEntry, commitButton := app.createCommitUI()
 	commitField := container.NewBorder(
 		nil,
@@ -173,5 +248,8 @@ func (app *GleamApp) Run() {
 
 	app.window.SetContent(layout)
 	app.window.Resize(fyne.NewSize(800, 600))
+
+	fmt.Printf("App initialization took %v\n", time.Since(start))
+
 	app.window.ShowAndRun()
 }
