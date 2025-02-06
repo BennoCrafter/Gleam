@@ -230,6 +230,7 @@ func (app *GleamApp) createCommitUI() (*widget.Entry, *widget.Entry, *widget.But
 	summaryEntry.SetPlaceHolder("Summary (required)")
 
 	descriptionEntry := widget.NewMultiLineEntry()
+	descriptionEntry.SetMinRowsVisible(5)
 	descriptionEntry.SetPlaceHolder("Description")
 
 	commitButton := widget.NewButton("Commit", app.handleCommit)
