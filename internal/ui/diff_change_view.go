@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 
-	"fyne.io/fyne/theme"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
@@ -19,54 +18,82 @@ func highlightDiff(content string) *widget.TextGrid {
 	grid := widget.NewTextGridFromString(content)
 	grid.ShowLineNumbers = true
 
-	lex := lexers.Get("go")
-	if lex == nil {
-		fmt.Println("Could not find diff lexer")
-		lex = lexers.Fallback
-	}
+	lines := strings.Split(content, "\n")
+	lexer := lexers.Get("go")
+	style := styles.Get("monokai")
+	iterator, _ := lexer.Tokenise(nil, content)
+	tokens := iterator.Tokens()
 
-	style := styles.Get("solarized-dark")
-	if style == nil {
-		style = styles.Fallback
-	}
+	tokenIndex := 0
+	for row, line := range lines {
+		line = strings.TrimSpace(line)
+		var bgColor color.Color = color.Transparent
+		var overlayAlpha uint8 = 100
 
-	iterator, err := lex.Tokenise(nil, content)
-	if err != nil {
-		fmt.Println("Error tokenizing content:", err)
-		return grid
-	}
-
-	row, col := 0, 0
-	for _, tok := range iterator.Tokens() {
-		if tok.Value == "\n" {
-			row++
-			col = 0
-			continue
-		}
-		length := len(tok.Value)
-		c := resolveColor(style.Get(tok.Type).Colour)
-
-		if strings.HasPrefix(tok.Value, "+") {
-			c = color.NRGBA{R: 0, G: 180, B: 0, A: 255}
-		} else if strings.HasPrefix(tok.Value, "-") {
-			c = color.NRGBA{R: 180, G: 0, B: 0, A: 255}
+		// Set background colors for diff markers
+		if strings.HasPrefix(line, "+") {
+			bgColor = color.NRGBA{R: 40, G: 200, B: 40, A: overlayAlpha}
+		} else if strings.HasPrefix(line, "-") {
+			bgColor = color.NRGBA{R: 200, G: 40, B: 40, A: overlayAlpha}
+		} else if strings.HasPrefix(line, "@") {
+			bgColor = color.NRGBA{R: 66, G: 133, B: 244, A: overlayAlpha}
 		}
 
-		grid.SetStyleRange(row, col, row, col+length, &widget.CustomTextGridStyle{FGColor: c})
-		col += length
+		// Apply syntax highlighting
+		if !strings.HasPrefix(line, "+++") && !strings.HasPrefix(line, "---") && !strings.HasPrefix(line, "@@") {
+			col := 0
+			for tokenIndex < len(tokens) {
+				token := tokens[tokenIndex]
+				entry := style.Get(token.Type)
+				fgColor := resolveColor(entry.Colour)
+
+				grid.SetStyleRange(row, col, row, col+len(token.Value),
+					&widget.CustomTextGridStyle{
+						BGColor: bgColor,
+						FGColor: fgColor,
+					})
+				col += len(token.Value)
+				tokenIndex++
+
+				// Break if we've processed all tokens for this line
+				if col >= len(line) {
+					break
+				}
+			}
+		} else {
+			// Just apply background color for diff metadata lines
+			grid.SetStyleRange(row, 0, row, len(line),
+				&widget.CustomTextGridStyle{
+					BGColor: bgColor,
+					FGColor: color.White,
+				})
+		}
 	}
 
 	return grid
 }
 
 func resolveColor(colour chroma.Colour) color.Color {
-	return color.NRGBA{R: colour.Red(), G: colour.Green(), B: colour.Blue(), A: 0xff}
+	return color.NRGBA{
+		R: colour.Red(),
+		G: colour.Green(),
+		B: colour.Blue(),
+		A: 0xff,
+	}
 }
 
-func loadDiffContent(filePath string) string {
+func loadDiffContent(filePath string) (string, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return `diff --git a/example.go b/example.go
+		return "", fmt.Errorf("failed to read diff file: %w", err)
+	}
+	return string(data), nil
+}
+
+func makeDiffViewer(filePath string) fyne.CanvasObject {
+	content, err := loadDiffContent(filePath)
+	if err != nil {
+		content = `diff --git a/example.go b/example.go
 index 1234567..89abcdef 100644
 --- a/example.go
 +++ b/example.go
@@ -74,22 +101,15 @@ index 1234567..89abcdef 100644
 	package main
 
 	func main() {
--    fmt.Println("Hello World")
-+    fmt.Println("Hello, Git Diff!")
+-    fmt.Println("Hello Wold")
++    fmt.Println("Hello World")
 	}`
+
 	}
-	return string(data)
-}
 
-func makeDiffViewer(filePath string) fyne.CanvasObject {
-	content := loadDiffContent(filePath)
 	diffDisplay := highlightDiff(content)
-
 	return container.NewBorder(
-		widget.NewToolbar(
-			widget.NewToolbarAction(theme.ContentCopyIcon(), func() {
-			}),
-		), nil, nil, nil,
+		nil, nil, nil, nil,
 		container.NewScroll(diffDisplay),
 	)
 }

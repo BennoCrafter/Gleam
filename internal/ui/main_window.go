@@ -272,9 +272,11 @@ func (app *GleamApp) Run() {
 	app.diffViewer = makeDiffViewer(diff)
 
 	layout := container.NewHSplit(commitField, app.diffViewer)
+	layout.Offset = 0.35
 
 	app.window.SetContent(layout)
-	app.window.Resize(fyne.NewSize(800, 600))
+	app.window.Resize(fyne.NewSize(1200, 600))
+	app.window.CenterOnScreen()
 
 	fmt.Printf("App initialization took %v\n", time.Since(start))
 
